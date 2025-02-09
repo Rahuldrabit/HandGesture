@@ -4,6 +4,7 @@ import mediapipe as mp
 import numpy as np
 import time
 import json
+import os
 
 # Initialize ChromaDB
 chroma_client = chromadb.PersistentClient(path="chroma_storage")
@@ -15,9 +16,11 @@ except Exception as e:
 
 # Initialize MediaPipe Hands
 mp_hands = mp.solutions.hands
+mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5)
 
-# Helper Functions
+
+# euclidean_distance function
 def euclidean_distance(point1, point2):
     return np.linalg.norm(np.array(point1) - np.array(point2))
 
@@ -40,6 +43,40 @@ def find_closest_finger(distances, collection):
             min_distance = distance
             closest_finger = metadatas[i]["finger"]
     return closest_finger
+
+# Save Sequence Function
+file_path = "finger_sequences.json"
+
+def save_sequence(sequence_name, all_sequences):
+    if not all_sequences:
+        print("No sequences to save.")
+        return
+    
+    # Read existing JSON data if file exists, else start with an empty dictionary
+    if os.path.exists(file_path):
+        try:
+            with open(file_path, "r") as f:
+                existing_data = json.load(f)
+        except (json.JSONDecodeError, FileNotFoundError):
+            existing_data = {}
+    else:
+        existing_data = {}
+
+    # Ensure existing data structure is a dictionary
+    if not isinstance(existing_data, dict):
+        existing_data = {}
+
+    # Append new data to the existing data
+    if sequence_name in existing_data:
+        existing_data[sequence_name].extend(all_sequences)
+    else:
+        existing_data[sequence_name] = all_sequences
+
+    # Save updated data back to the JSON file
+    with open(file_path, "w") as f:
+        json.dump(existing_data, f, indent=4)
+
+    print(f"Saved {len(all_sequences)} sequences under '{sequence_name}'")
 
 # Finger Mapping Dictionary
 finger_map = {
@@ -81,6 +118,11 @@ while cap.isOpened():
     results = hands.process(image)
     current_finger = None
 
+    # showw keypoints
+    if results.multi_hand_landmarks:
+        for hand_landmarks in results.multi_hand_landmarks:
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)     
+
     if recording and results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
             wrist = hand_landmarks.landmark[0]
@@ -95,6 +137,8 @@ while cap.isOpened():
             z_score_distances = [float((d - mean) / (std + 1e-8)) for d in distances]
             closest_finger_name = find_closest_finger(z_score_distances, collection)
             current_finger = finger_map.get(closest_finger_name, None)
+            if closest_finger_name:
+                cv2.putText(frame, f"Current Finger: {closest_finger_name}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
     # Update finger sequence only when recording
     if recording and current_finger:
@@ -141,11 +185,6 @@ while cap.isOpened():
 cap.release()
 cv2.destroyAllWindows()
 
-# Save data
-if all_sequences:
-    data_to_save = {sequence_name: all_sequences}
-    with open("finger_sequences.json", "w") as f:
-        json.dump(data_to_save, f, indent=4)
-    print(f"Saved {len(all_sequences)} sequences under '{sequence_name}'")
-else:
-    print("No sequences recorded.")
+# Save sequences to JSON file
+save_sequence(sequence_name, all_sequences)
+print("All sequences saved successfully.")

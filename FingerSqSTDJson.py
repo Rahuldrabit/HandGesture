@@ -19,15 +19,14 @@ mp_hands = mp.solutions.hands
 mp_drawing = mp.solutions.drawing_utils
 hands = mp_hands.Hands(static_image_mode=False, max_num_hands=1, min_detection_confidence=0.5)
 
-
-# euclidean_distance function
+# Utility functions
 def euclidean_distance(point1, point2):
     return np.linalg.norm(np.array(point1) - np.array(point2))
 
 def z_score_standardization(data, eps=1e-8):
     mean = np.mean(data)
     std = np.std(data)
-    if std < eps:  # Avoid division by zero
+    if std < eps:
         return [0.0] * len(data)
     return [(x - mean) / std for x in data]
 
@@ -51,7 +50,7 @@ def save_sequence(sequence_name, all_sequences):
     if not all_sequences:
         print("No sequences to save.")
         return
-    
+
     # Read existing JSON data if file exists, else start with an empty dictionary
     if os.path.exists(file_path):
         try:
@@ -62,7 +61,6 @@ def save_sequence(sequence_name, all_sequences):
     else:
         existing_data = {}
 
-    # Ensure existing data structure is a dictionary
     if not isinstance(existing_data, dict):
         existing_data = {}
 
@@ -113,16 +111,16 @@ while cap.isOpened():
     if not ret:
         break
 
-    # Process frames even when paused to show live video
+    # Process frame and hand landmarks
     image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
     results = hands.process(image)
     current_finger = None
 
-    # showw keypoints
     if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
-            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)     
+            mp_drawing.draw_landmarks(frame, hand_landmarks, mp_hands.HAND_CONNECTIONS)
 
+    # Only process finger detection if recording is active
     if recording and results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
             wrist = hand_landmarks.landmark[0]
@@ -138,9 +136,12 @@ while cap.isOpened():
             closest_finger_name = find_closest_finger(z_score_distances, collection)
             current_finger = finger_map.get(closest_finger_name, None)
             if closest_finger_name:
-                cv2.putText(frame, f"Current Finger: {closest_finger_name}", (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+                cv2.putText(frame, f"Current Finger: {closest_finger_name}", (10, 60),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+            # Process only the first detected hand
+            break
 
-    # Update finger sequence only when recording
+    # If recording and a valid finger is detected, update the sequence
     if recording and current_finger:
         current_time = time.time()
         if last_finger is None:
@@ -153,34 +154,55 @@ while cap.isOpened():
             last_finger = current_finger
             start_time = current_time
 
-            if len(finger_sequence) == 6:
-                # Apply Z-score standardization to time differences
+    # Handle key presses (only one cv2.waitKey call per frame)
+    key = cv2.waitKey(1) & 0xFF
+    if key == ord('q'):
+        # If quitting and a sequence is in progress, finalize it first.
+        if recording and last_finger is not None:
+            current_time = time.time()
+            time_diff = current_time - start_time
+            finger_sequence.append(last_finger)
+            time_sequence.append(time_diff)
+            if finger_sequence:
                 standardized_times = z_score_standardization(time_sequence)
                 sequence = list(zip(finger_sequence, standardized_times))
                 all_sequences.append(sequence)
                 print(f"Stored sequence: {sequence}")
-                # Reset for next sequence
-                finger_sequence = []
-                time_sequence = []
-                last_finger = None
-                recording = False  # Auto-pause after 6 gestures
-
-    # Display UI
-    state_text = f"Recording: {len(finger_sequence)}/6" if recording else "Paused"
-    cv2.putText(frame, state_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
-    cv2.imshow('Hand Tracking', frame)
-
-    # Key handling (non-blocking)
-    key = cv2.waitKey(1) & 0xFF
-    if key == ord('q'):
         break
     elif key == ord('r'):
         if not recording:
             recording = True
+            # Reset sequence data when starting a new recording
+            last_finger = None
+            start_time = None
+            finger_sequence = []
+            time_sequence = []
             print("Recording resumed. Show next angle.")
     elif key == ord('p'):
-        recording = False
-        print("Paused. Adjust angle and press 'r' to record next sequence.")
+        if recording:
+            # Finalize the current sequence if possible
+            if last_finger is not None:
+                current_time = time.time()
+                time_diff = current_time - start_time
+                finger_sequence.append(last_finger)
+                time_sequence.append(time_diff)
+            if finger_sequence:
+                standardized_times = z_score_standardization(time_sequence)
+                sequence = list(zip(finger_sequence, standardized_times))
+                all_sequences.append(sequence)
+                print(f"Stored sequence: {sequence}")
+            else:
+                print("No sequence to store.")
+            recording = False
+            last_finger = None
+            start_time = None
+            finger_sequence = []
+            time_sequence = []
+            print("Paused. Adjust angle and press 'r' to record next sequence.")
+
+    state_text = f"Recording: {len(finger_sequence)}/6" if recording else "Paused"
+    cv2.putText(frame, state_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+    cv2.imshow('Hand Tracking', frame)
 
 cap.release()
 cv2.destroyAllWindows()

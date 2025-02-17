@@ -79,12 +79,15 @@ def save_sequence(sequence_name, all_sequences):
 # Finger Mapping Dictionary
 finger_map = {
     "Punch": "1",
+    "Punc": "1",
     "TumbsIndexUp": "2",
     "TumbsUp": "3",
     "IndexUp": "4",
     "MiddleUp": "5",
+    "Middle" : "5",
     "RingUp": "6",
-    "PinkyUp": "7"
+    "PinkyUp": "7",
+    "AllUp": "8"
 }
 
 # Tracking Variables
@@ -200,7 +203,7 @@ while cap.isOpened():
             time_sequence = []
             print("Paused. Adjust angle and press 'r' to record next sequence.")
 
-    state_text = f"Recording: {len(finger_sequence)}/6" if recording else "Paused"
+    state_text = f"Recording: {len(finger_sequence)}" if recording else "Paused"
     cv2.putText(frame, state_text, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
     cv2.imshow('Hand Tracking', frame)
 
